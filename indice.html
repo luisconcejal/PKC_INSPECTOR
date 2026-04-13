@@ -210,6 +210,8 @@ table.utbl tr:hover td{background:#faf8f5;}
     <div class="user-pill">&#128100; <span id="user-name">—</span></div>
     <span id="sync-status" style="font-size:11px;color:#8a7a6a;white-space:nowrap;">&#9675; SharePoint</span>
     <button class="btn bb bsm" onclick="connectSharePoint()" title="Conectar y sincronizar con SharePoint">&#8635; SP</button>
+    <button class="btn bb bsm" id="btn-sp-cols" onclick="createSPColumns()" title="Crear columnas en SharePoint (solo primera vez)" style="display:none;font-size:11px;">&#9881; Inicializar SP</button>
+    <div id="sp-col-status-top" style="font-size:11px;color:#5a6a58;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;"></div>
     <button class="btn bb bsm" onclick="showSec('profile')">Mi Cuenta</button>
     <button class="btn bo bsm" onclick="logout()">Salir</button>
     <button class="btn bp bsm" onclick="showSec('new')">+ Nueva Visita</button>
@@ -677,11 +679,12 @@ function clearSPToken() {
 
 function updateSyncStatus(status) {
   var el = document.getElementById('sync-status');
+  var btn = document.getElementById('btn-sp-cols');
   if (!el) return;
-  if (status === 'online')   { el.innerHTML = '&#9728;&#65039; SharePoint conectado'; el.style.color = '#2a6a2a'; }
+  if (status === 'online')   { el.innerHTML = '&#9728;&#65039; SharePoint conectado'; el.style.color = '#2a6a2a'; if(btn) btn.style.display='inline-flex'; }
   if (status === 'syncing')  { el.innerHTML = '&#8635; Sincronizando...';             el.style.color = '#8B6914'; }
   if (status === 'ok')       { el.innerHTML = '&#10003; Guardado en SharePoint';      el.style.color = '#2a6a2a'; }
-  if (status === 'offline')  { el.innerHTML = '&#9888; Solo local (sin conexión)';    el.style.color = '#8B1A1A'; }
+  if (status === 'offline')  { el.innerHTML = '&#9888; Solo local (sin conexi\u00f3n)'; el.style.color = '#8B1A1A'; if(btn) btn.style.display='none'; }
   if (status === 'error')    { el.innerHTML = '&#10005; Error SharePoint';             el.style.color = '#8B1A1A'; }
 }
 
@@ -1409,16 +1412,15 @@ function generateDocx(r){
 
 // ── Create SharePoint columns automatically ───────────────────────────────
 function createSPColumns() {
-  var statusEl = document.getElementById('sp-col-status');
-  statusEl.textContent = 'Conectando con SharePoint...';
-  statusEl.style.color = '#5a6a58';
-  statusEl.style.fontWeight = 'normal';
-  var token = getStoredToken();
-  if (!token) {
-    statusEl.textContent = 'Error: no hay token. Pulsa ⟳ SP primero para conectar con Microsoft.';
-    statusEl.style.color = '#8B1A1A';
-    return;
+  var statusEl = document.getElementById('sp-col-status') || document.getElementById('sp-col-status-top');
+  var statusTop = document.getElementById('sp-col-status-top');
+  function setStatus(msg, color) {
+    if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color||'#5a6a58'; }
+    if (statusTop) { statusTop.textContent = msg; statusTop.style.color = color||'#5a6a58'; }
   }
+  setStatus('Conectando...');
+  var token = getStoredToken();
+  if (!token) { setStatus('Pulsa ⟳ SP primero.', '#8B1A1A'); return; }
   var cols = ['Ciudad','Fecha','Tecnico','Empresa','Contacto','Telefono',
               'Direccion','Plantas','Plazas','Descripcion','Valoracion',
               'Observaciones','Pasos','Owner','ReportId','ChecklistJSON'];
