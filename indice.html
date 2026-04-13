@@ -1411,34 +1411,65 @@ function generateDocx(r){
 function createSPColumns() {
   var statusEl = document.getElementById('sp-col-status');
   statusEl.textContent = 'Conectando con SharePoint...';
-  getSPToken(function(token) {
-    if (!token) { statusEl.textContent = 'Error: no se pudo obtener token. Pulsa ⟳ SP primero.'; return; }
-    var cols = ['Ciudad','Fecha','Tecnico','Empresa','Contacto','Telefono',
-                'Direccion','Plantas','Plazas','Descripcion','Valoracion',
-                'Observaciones','Pasos','Owner','ReportId','ChecklistJSON'];
-    var baseUrl = 'https://graph.microsoft.com/v1.0/sites/' +
-      encodeURIComponent('pkcgestiona.sharepoint.com') +
-      ':/sites/PKCCONSULTORIAYTELECONTROLSL:/lists/PKCinformes/columns';
-    var done = 0; var errors = 0;
-    statusEl.textContent = 'Creando columnas (0/' + cols.length + ')...';
-    cols.forEach(function(col) {
-      fetch(baseUrl, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: col, text: {} })
-      }).then(function(r) {
-        done++; if (!r.ok) errors++;
-        statusEl.textContent = 'Creando columnas (' + done + '/' + cols.length + ')...';
-        if (done === cols.length) {
-          statusEl.innerHTML = '&#10003; ' + (errors < cols.length ? '¡Listo! Columnas creadas.' : 'Columnas ya existían.') + ' SharePoint listo.';
-          statusEl.style.color = '#2a6a2a'; statusEl.style.fontWeight = '600';
-        }
-      }).catch(function() {
-        done++; errors++;
-        if (done === cols.length) { statusEl.textContent = 'Error. Comprueba conexión.'; statusEl.style.color = '#8B1A1A'; }
+  statusEl.style.color = '#5a6a58';
+  statusEl.style.fontWeight = 'normal';
+  var token = getStoredToken();
+  if (!token) {
+    statusEl.textContent = 'Error: no hay token. Pulsa ⟳ SP primero para conectar con Microsoft.';
+    statusEl.style.color = '#8B1A1A';
+    return;
+  }
+  var cols = ['Ciudad','Fecha','Tecnico','Empresa','Contacto','Telefono',
+              'Direccion','Plantas','Plazas','Descripcion','Valoracion',
+              'Observaciones','Pasos','Owner','ReportId','ChecklistJSON'];
+  // First get the site ID, then list ID, then create columns
+  statusEl.textContent = 'Obteniendo ID del sitio...';
+  fetch('https://graph.microsoft.com/v1.0/sites/pkcgestiona.sharepoint.com:/sites/PKCCONSULTORIAYTELECONTROLSL', {
+    headers: { 'Authorization': 'Bearer ' + token }
+  }).then(function(r){ return r.json(); })
+  .then(function(site) {
+    if (!site.id) { statusEl.textContent = 'Error: no se pudo obtener el sitio. ' + JSON.stringify(site); statusEl.style.color='#8B1A1A'; return; }
+    var siteId = site.id;
+    statusEl.textContent = 'Obteniendo ID de la lista...';
+    return fetch('https://graph.microsoft.com/v1.0/sites/' + siteId + '/lists/PKCinformes', {
+      headers: { 'Authorization': 'Bearer ' + token }
+    }).then(function(r){ return r.json(); })
+    .then(function(list) {
+      if (!list.id) { statusEl.textContent = 'Error: no se pudo obtener la lista. ' + JSON.stringify(list); statusEl.style.color='#8B1A1A'; return; }
+      var listId = list.id;
+      statusEl.textContent = 'Creando columnas (0/' + cols.length + ')...';
+      var done = 0; var created = 0; var skipped = 0;
+      cols.forEach(function(col) {
+        var body = { displayName: col, name: col, text: { allowMultipleLines: col === 'ChecklistJSON' || col === 'Descripcion' || col === 'Observaciones' } };
+        fetch('https://graph.microsoft.com/v1.0/sites/' + siteId + '/lists/' + listId + '/columns', {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        }).then(function(r){ return r.json(); })
+        .then(function(res) {
+          done++;
+          if (res.id) { created++; }
+          else if (res.error && res.error.code === 'nameAlreadyExists') { skipped++; }
+          else { console.log('Col error for ' + col + ':', JSON.stringify(res)); }
+          statusEl.textContent = 'Creando columnas (' + done + '/' + cols.length + ')... creadas:' + created + ' existentes:' + skipped;
+          if (done === cols.length) {
+            if (created > 0 || skipped === cols.length) {
+              statusEl.innerHTML = '&#10003; ¡Listo! ' + created + ' columnas creadas, ' + skipped + ' ya existían. SharePoint listo.';
+              statusEl.style.color = '#2a6a2a';
+            } else {
+              statusEl.textContent = 'Revisa la consola — puede haber errores de permisos.';
+              statusEl.style.color = '#8B1A1A';
+            }
+            statusEl.style.fontWeight = '600';
+          }
+        }).catch(function(e) {
+          done++;
+          console.log('Col fetch error:', e);
+          if (done === cols.length) { statusEl.textContent = 'Error de red. Comprueba conexión.'; statusEl.style.color = '#8B1A1A'; }
+        });
       });
     });
-  });
+  }).catch(function(e){ statusEl.textContent = 'Error de conexión: ' + e; statusEl.style.color = '#8B1A1A'; });
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
