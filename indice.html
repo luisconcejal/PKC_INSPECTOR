@@ -157,6 +157,37 @@ table.utbl tr:hover td{background:#faf8f5;}
 .alert-ok{background:#e8f5e9;color:#2e7d32;border:1px solid #a5d6a7;}
 .alert-err{background:#fbe9e7;color:#c62828;border:1px solid #ef9a9a;}
 @media(max-width:600px){.g2,.g3,.g4{grid-template-columns:1fr;}.sr{grid-template-columns:repeat(2,1fr);}.vg{grid-template-columns:repeat(2,1fr);}.ra{flex-wrap:wrap;}}
+@media(max-width:768px){
+  .topbar{height:auto;min-height:48px;flex-wrap:wrap;padding:6px 10px;gap:5px;}
+  .topbar-mid{display:none;}
+  .logo{height:28px;}
+  .sep{display:none;}
+  .user-pill{font-size:11px;padding:2px 7px;}
+  .btn{padding:5px 9px;font-size:12px;}
+  .bsm{padding:4px 7px;font-size:11px;}
+  .nav{padding:0 8px;}
+  .tab{padding:8px 10px;font-size:12px;}
+  .content{padding:.8rem;}
+  .ri{flex-wrap:wrap;gap:7px;}
+  .ric{display:none;}
+  .rif{min-width:0;width:100%;}
+  .rn{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .ra{width:100%;justify-content:flex-end;gap:4px;}
+  .card{padding:.8rem;}
+  .ct{font-size:14px;}
+  .sr{grid-template-columns:repeat(2,1fr);}
+  .sc{padding:.6rem;}
+  .sn{font-size:18px;}
+  .cw{overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .cht th,.cht td{font-size:11px;padding:4px 5px;}
+  .vg{grid-template-columns:1fr;}
+  .vc{padding:.7rem;}
+  .g2,.g3,.g4{grid-template-columns:1fr;}
+  input[type=text],input[type=date],input[type=password],textarea{font-size:16px;}
+  .login-box{width:90vw;padding:1.2rem 1rem;}
+  .login-tagline{font-size:10px;}
+  .login-title{font-size:22px;}
+}
 
 </style>
 </head>
@@ -414,11 +445,11 @@ function lsSet(k,v) { localStorage.setItem(k, JSON.stringify(v)); }
 // USER MANAGEMENT
 // ══════════════════════════════════════════════════════════════════════════════
 var DEFAULT_USERS = [
-  {username:'admin',       password:'pkc2026',    role:'admin', name:'Administrador',    active:true},
-  {username:'luisgarcia',  password:'pkc2026',    role:'user',  name:'Luis García',      active:true},
-  {username:'luisconcejal',password:'pkc2026',    role:'user',  name:'Luis Concejal',    active:true},
-  {username:'dolores',     password:'pkc2026',    role:'user',  name:'Dolores Viejo',    active:true},
-  {username:'raul',        password:'pkc2026',    role:'user',  name:'Raúl López',       active:true}
+  {username:'admin',       password:'',    role:'admin', name:'Administrador',    active:true},
+  {username:'luisgarcia',  password:'',    role:'user',  name:'Luis García',      active:true},
+  {username:'luisconcejal',password:'',    role:'user',  name:'Luis Concejal',    active:true},
+  {username:'dolores',     password:'',    role:'user',  name:'Dolores Viejo',    active:true},
+  {username:'raul',        password:'',    role:'user',  name:'Raúl López',       active:true}
 ];
 
 function getUsers() {
@@ -426,9 +457,23 @@ function getUsers() {
   if (!u || u.length === 0) { lsSet('pkc_users', DEFAULT_USERS); return DEFAULT_USERS; }
   return u;
 }
-function saveUsers(users) { lsSet('pkc_users', users); }
+function saveUsers(users) {
+  lsSet('pkc_users', users);
+  // Sync each user to Sheets
+  users.forEach(function(u) {
+    fetch(GS_URL, {
+      method: 'POST',
+      body: JSON.stringify({action:'saveUser', user:{
+        username:u.username, password:u.password, name:u.name,
+        role:u.role, active:u.active!==false
+      }}),
+      headers: {'Content-Type': 'text/plain'}
+    }).catch(function(){});
+  });
+}
 
 function findUser(username, password) {
+  // Local fallback only — real auth is via Sheets
   var users = getUsers();
   for (var i = 0; i < users.length; i++) {
     var u = users[i];
@@ -446,27 +491,57 @@ function doLogin() {
   var u = document.getElementById('login-user').value.trim();
   var p = document.getElementById('login-pass').value;
   var err = document.getElementById('login-err');
-  var found = findUser(u, p);
-  if (found) {
-    currentUser = found;
-    var ls = document.getElementById('login-screen');
-    ls.style.animation = 'fadeOut .45s forwards';
-    setTimeout(function() {
-      ls.style.display = 'none';
-      var app = document.getElementById('main-app');
-      app.style.display = 'block';
-      document.getElementById('user-name').textContent = found.name || found.username;
-      var adminTab = document.getElementById('tab-admin');
-      if (found.role === 'admin') { adminTab.style.display = 'flex'; } else { adminTab.style.display = 'none'; }
-      init();
-    }, 450);
-    err.style.display = 'none';
-  } else {
-    err.style.display = 'block';
-    var btn = document.getElementById('login-btn');
-    btn.style.animation = 'shake .3s';
-    setTimeout(function() { btn.style.animation = ''; }, 300);
-  }
+  var btn = document.getElementById('login-btn');
+  if (!u || !p) { err.style.display = 'block'; return; }
+  // Try Sheets authentication first
+  err.style.display = 'none';
+  btn.textContent = '...';
+  btn.disabled = true;
+  fetch(GS_URL, {
+    method: 'POST',
+    body: JSON.stringify({action:'login', username:u, password:p}),
+    headers: {'Content-Type': 'text/plain'}
+  }).then(function(r){ return r.json(); })
+  .then(function(d) {
+    btn.textContent = '▶ INICIAR SESIÓN';
+    btn.disabled = false;
+    if (d.ok) {
+      // Update local cache with Sheets user data
+      var found = {username:d.username, name:d.name, role:d.role, active:true, password:p};
+      var users = getUsers();
+      var idx = -1;
+      for (var i=0; i<users.length; i++) { if (users[i].username.toLowerCase()===d.username.toLowerCase()) { idx=i; break; } }
+      if (idx >= 0) { users[idx] = found; } else { users.push(found); }
+      lsSet('pkc_users', users);
+      loginSuccess(found);
+    } else {
+      err.style.display = 'block';
+      btn.style.animation = 'shake .3s';
+      setTimeout(function(){ btn.style.animation=''; }, 300);
+    }
+  }).catch(function() {
+    // Sheets unavailable — fallback to local
+    btn.textContent = '▶ INICIAR SESIÓN';
+    btn.disabled = false;
+    var found = findUser(u, p);
+    if (found) { loginSuccess(found); }
+    else { err.style.display = 'block'; }
+  });
+}
+
+function loginSuccess(found) {
+  currentUser = found;
+  var ls = document.getElementById('login-screen');
+  ls.style.animation = 'fadeOut .45s forwards';
+  setTimeout(function() {
+    ls.style.display = 'none';
+    var app = document.getElementById('main-app');
+    app.style.display = 'block';
+    document.getElementById('user-name').textContent = found.name || found.username;
+    var adminTab = document.getElementById('tab-admin');
+    if (found.role === 'admin') { adminTab.style.display = 'flex'; } else { adminTab.style.display = 'none'; }
+    init();
+  }, 450);
 }
 
 function logout() {
@@ -595,14 +670,14 @@ window.addEventListener('load', startGrid);
 // ══════════════════════════════════════════════════════════════════════════════
 var ELEMS = [
   {s:'ACCESOS', e:['ENTRADAS','SALIDAS','BARRERAS','CAJERO MIXTO','CAJERO TARJETA','N ACCESOS PEATONALES','ABREPUERTAS','INTERFONIA']},
-  {s:'INSTALACIONES', e:['CO2','CENTRAL INCENDIOS','COMUNICACIONES','FIBRA','ROUTER','MEGAFONIA','BANOS','CONTROL','OFICINA']},
+  {s:'INSTALACIONES', e:['CO','CENTRAL INCENDIOS','COMUNICACIONES','FIBRA','ROUTER','MEGAFONIA','BANOS','CONTROL','OFICINA']},
   {s:'SISTEMA Y SENALIZACION', e:['GUIADO','PORTONES','CCTV GRABADOR','CAMARAS','PLANOS','BANDEROLAS']},
   {s:'ELEMENTOS MECANICOS', e:['GRUPO ELECTROGENO','ASCENSOR','BOMBAS ACHIQUE','CARGADORES','GRUPO DE PRESION','BARRERAS RESIDENTES']}
 ];
 var LABELS = {
   'ENTRADAS':'ENTRADAS','SALIDAS':'SALIDAS','BARRERAS':'BARRERAS','CAJERO MIXTO':'CAJERO MIXTO',
   'CAJERO TARJETA':'CAJERO TARJETA','N ACCESOS PEATONALES':'N\u00BA ACCESOS PEATONALES',
-  'ABREPUERTAS':'ABREPUERTAS','INTERFONIA':'INTERFONÍA','CO2':'CO2',
+  'ABREPUERTAS':'ABREPUERTAS','INTERFONIA':'INTERFONÍA','CO':'CO',
   'CENTRAL INCENDIOS':'CENTRAL INCENDIOS','COMUNICACIONES':'COMUNICACIONES',
   'FIBRA':'FIBRA','ROUTER':'ROUTER','MEGAFONIA':'MEGAFONÍA','BANOS':'BAÑOS',
   'CONTROL':'CONTROL','OFICINA':'OFICINA','GUIADO':'GUIADO','PORTONES':'PORTONES',
@@ -645,13 +720,24 @@ function saveToSharePoint(rep, cb) {
     return {elemento:i.elemento, seccion:i.seccion, numero:i.numero,
             marca:i.marca, estado:i.estado, comentario:i.comentario};
   });
+  // Collect all photos for Drive upload
+  var allFotos = [];
+  (rep.checklist||[]).forEach(function(item) {
+    (item.fotos||[]).forEach(function(f, idx) {
+      allFotos.push({name: (item.elemento||'foto').replace(/\W/g,'_')+'_'+idx+'.jpg', data: f});
+    });
+  });
+  (rep.fotosGenerales||[]).forEach(function(f, idx) {
+    allFotos.push({name: 'general_'+idx+'.jpg', data: f});
+  });
   var payload = {action:'save', report:{
     id:rep.id, owner:rep.owner||'', nombre:rep.nombre||'', ciudad:rep.ciudad||'',
     fecha:rep.fecha||'', tecnico:rep.tecnico||'', empresa:rep.empresa||'',
     contacto:rep.contacto||'', telefono:rep.telefono||'', direccion:rep.direccion||'',
     plantas:rep.plantas||'', plazas:rep.plazas||'', descripcion:rep.descripcion||'',
     valoracion:rep.valoracion||'', observaciones:rep.observaciones||'', pasos:rep.pasos||'',
-    checklist:checkSummary
+    checklist:checkSummary,
+    fotos: allFotos
   }};
   fetch(GS_URL, {
     method: 'POST',
@@ -1594,7 +1680,13 @@ function toggleUser(username) {
 function deleteUser(username) {
   if (!confirm('¿Eliminar usuario "'+username+'" y todos sus informes?')) return;
   var users = getUsers().filter(function(u){return u.username!==username;});
-  saveUsers(users); localStorage.removeItem(getReportsKey(username));
+  lsSet('pkc_users', users);
+  localStorage.removeItem(getReportsKey(username));
+  fetch(GS_URL, {
+    method: 'POST',
+    body: JSON.stringify({action:'deleteUser', username:username}),
+    headers: {'Content-Type': 'text/plain'}
+  }).catch(function(){});
   renderUserTable(); renderUserSelector(); alert('Usuario eliminado.');
 }
 
