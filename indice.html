@@ -208,10 +208,8 @@ table.utbl tr:hover td{background:#faf8f5;}
     <span style="font-size:12px;color:#8a7a6a;">PKC Consultor&iacute;a y Telecontrol</span>
     <div class="topbar-mid">Informe T&eacute;cnico de Evaluaci&oacute;n y Diagn&oacute;stico para Telecontrol de Aparcamientos</div>
     <div class="user-pill">&#128100; <span id="user-name">—</span></div>
-    <span id="sync-status" style="font-size:11px;color:#8a7a6a;white-space:nowrap;">&#9675; SharePoint</span>
-    <button class="btn bb bsm" onclick="connectSharePoint()" title="Conectar y sincronizar con SharePoint">&#8635; SP</button>
-    <button class="btn bb bsm" id="btn-sp-cols" onclick="createSPColumns()" title="Crear columnas en SharePoint (solo primera vez)" style="display:none;font-size:11px;">&#9881; Inicializar SP</button>
-    <div id="sp-col-status-top" style="font-size:11px;color:#5a6a58;white-space:nowrap;max-width:180px;overflow:hidden;text-overflow:ellipsis;"></div>
+    <span id="sync-status" style="font-size:11px;color:#8a7a6a;white-space:nowrap;">&#9675; Sheets</span>
+    <button class="btn bb bsm" onclick="connectSharePoint()" title="Sincronizar con Google Sheets">&#8635; Sync</button>
     <button class="btn bb bsm" onclick="showSec('profile')">Mi Cuenta</button>
     <button class="btn bo bsm" onclick="logout()">Salir</button>
     <button class="btn bp bsm" onclick="showSec('new')">+ Nueva Visita</button>
@@ -623,151 +621,67 @@ var viewingUser = null; // for admin: whose reports are being viewed
 
 
 // ══════════════════════════════════════════════════════════════════════════════
-// SHAREPOINT CONFIG — OAuth2 implicit flow (no external libraries)
+// GOOGLE SHEETS CONFIG
 // ══════════════════════════════════════════════════════════════════════════════
-var SP_CLIENT_ID = '151bd1fd-c598-448b-b358-dcc52d86f092';
-var SP_TENANT_ID = 'a4f45369-cc51-4161-b537-767e9669d535';
-var SP_SCOPE     = 'https://graph.microsoft.com/Sites.ReadWrite.All https://graph.microsoft.com/Files.ReadWrite https://graph.microsoft.com/User.Read offline_access';
-var spToken = null;
-
-// Check for token in URL hash after redirect back from Microsoft login
-function checkTokenInHash() {
-  var hash = window.location.hash;
-  if (!hash) return false;
-  var params = {};
-  hash.replace('#','').split('&').forEach(function(p){ var kv=p.split('='); params[decodeURIComponent(kv[0])]=decodeURIComponent(kv[1]||''); });
-  if (params.access_token) {
-    spToken = params.access_token;
-    // Store token and expiry
-    var exp = Date.now() + Math.min(parseInt(params.expires_in||3600)*1000, 8*3600*1000);
-    localStorage.setItem('pkc_sp_token', spToken);
-    localStorage.setItem('pkc_sp_exp', String(exp));
-    // Clean URL hash
-    history.replaceState(null, '', window.location.pathname);
-    updateSyncStatus('online');
-    return true;
-  }
-  return false;
-}
-
-function getStoredToken() {
-  var token = localStorage.getItem('pkc_sp_token');
-  var exp = parseInt(localStorage.getItem('pkc_sp_exp')||'0');
-  if (token && Date.now() < exp) return token; // use until actual expiry
-  return null;
-}
-
-function getSPToken(cb) {
-  // Try stored token first
-  var stored = getStoredToken();
-  if (stored) { spToken = stored; cb(stored); return; }
-  // Redirect to Microsoft login
-  var redirectUri = encodeURIComponent(window.location.href.split('#')[0].split('?')[0]);
-  var url = 'https://login.microsoftonline.com/' + SP_TENANT_ID + '/oauth2/v2.0/authorize' +
-    '?client_id=' + SP_CLIENT_ID +
-    '&response_type=token' +
-    '&redirect_uri=' + redirectUri +
-    '&scope=' + encodeURIComponent(SP_SCOPE) +
-    '&response_mode=fragment' +
-    '&prompt=select_account';
-  window.location.href = url;
-}
-
-function clearSPToken() {
-  localStorage.removeItem('pkc_sp_token');
-  localStorage.removeItem('pkc_sp_exp');
-  spToken = null;
-}
+var GS_URL = 'https://script.google.com/macros/s/AKfycbxI8p1ascLS52Wi6oUcjJtio0NIC6b7LjbGZwqbqtIu31B3SY1p1zk_Ta8BO8gsikhS/exec';
 
 function updateSyncStatus(status) {
   var el = document.getElementById('sync-status');
-  var btn = document.getElementById('btn-sp-cols');
   if (!el) return;
-  if (status === 'online')   { el.innerHTML = '&#9728;&#65039; SharePoint conectado'; el.style.color = '#2a6a2a'; if(btn) btn.style.display='inline-flex'; }
-  if (status === 'syncing')  { el.innerHTML = '&#8635; Sincronizando...';             el.style.color = '#8B6914'; }
-  if (status === 'ok')       { el.innerHTML = '&#10003; Guardado en SharePoint';      el.style.color = '#2a6a2a'; }
-  if (status === 'offline')  { el.innerHTML = '&#9888; Solo local (sin conexi\u00f3n)'; el.style.color = '#8B1A1A'; if(btn) btn.style.display='none'; }
-  if (status === 'error')    { el.innerHTML = '&#10005; Error SharePoint';             el.style.color = '#8B1A1A'; }
+  if (status === 'online')  { el.innerHTML = '&#9728;&#65039; Sheets conectado'; el.style.color = '#2a6a2a'; }
+  if (status === 'syncing') { el.innerHTML = '&#8635; Sincronizando...';          el.style.color = '#8B6914'; }
+  if (status === 'ok')      { el.innerHTML = '&#10003; Guardado en Sheets';       el.style.color = '#2a6a2a'; }
+  if (status === 'offline') { el.innerHTML = '&#9650; Solo local';                el.style.color = '#8B1A1A'; }
+  if (status === 'error')   { el.innerHTML = '&#10005; Error Sheets';             el.style.color = '#8B1A1A'; }
 }
 
-// ── Save to SharePoint list ───────────────────────────────────────────────
-function spTrunc(s,n){return (s||'').toString().substring(0,n||255);}
+function checkTokenInHash() { return false; }
+function getStoredToken() { return 'gs'; }
+function clearSPToken() {}
+
 function saveToSharePoint(rep, cb) {
-  getSPToken(function(token) {
-    if (!token) { cb(false); return; }
-    updateSyncStatus('syncing');
-    // Strip fotos from checklist to keep payload small — store summary only
-    var checkSummary = (rep.checklist||[]).map(function(i) {
-      return {elemento:i.elemento, seccion:i.seccion, numero:i.numero,
-              marca:i.marca, estado:i.estado, comentario:i.comentario};
-    });
-    var body = {
-      fields: {
-        Title:         spTrunc(rep.nombre),
-        CIUDAD:        spTrunc(rep.ciudad),
-        Fecha:         spTrunc(rep.fecha, 50),
-        Tecnico:       spTrunc(rep.tecnico),
-        Empresa:       spTrunc(rep.empresa),
-        Contacto:      spTrunc(rep.contacto),
-        Telefono:      spTrunc(rep.telefono, 100),
-        Direccion:     spTrunc(rep.direccion),
-        Plantas:       spTrunc(rep.plantas, 50),
-        Plazas:        spTrunc(rep.plazas, 50),
-        Descripcion:   spTrunc(rep.descripcion),
-        Valoracion:    spTrunc(rep.valoracion, 50),
-        Observaciones: spTrunc(rep.observaciones),
-        Pasos:         spTrunc(rep.pasos),
-        Owner:         spTrunc(rep.owner, 100),
-        ReportID:      String(rep.id),
-        ChecklistJSON: JSON.stringify(checkSummary).substring(0, 3000)
-      }
-    };
-    var url = 'https://graph.microsoft.com/v1.0/sites/' +
-      encodeURIComponent('pkcgestiona.sharepoint.com') +
-      ':/sites/PKCCONSULTORIAYTELECONTROLSL:/lists/PKCinformes/items';
-    fetch(url, {
-      method: 'POST',
-      headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    }).then(function(r) {
-      if (r.ok) { updateSyncStatus('ok'); cb(true); }
-      else { r.text().then(function(t){ console.log('SP error:', t); }); updateSyncStatus('error'); cb(false); }
-    }).catch(function(e){ console.log('SP fetch error:', e); updateSyncStatus('error'); cb(false); });
+  updateSyncStatus('syncing');
+  var checkSummary = (rep.checklist||[]).map(function(i) {
+    return {elemento:i.elemento, seccion:i.seccion, numero:i.numero,
+            marca:i.marca, estado:i.estado, comentario:i.comentario};
   });
+  var payload = {action:'save', report:{
+    id:rep.id, owner:rep.owner||'', nombre:rep.nombre||'', ciudad:rep.ciudad||'',
+    fecha:rep.fecha||'', tecnico:rep.tecnico||'', empresa:rep.empresa||'',
+    contacto:rep.contacto||'', telefono:rep.telefono||'', direccion:rep.direccion||'',
+    plantas:rep.plantas||'', plazas:rep.plazas||'', descripcion:rep.descripcion||'',
+    valoracion:rep.valoracion||'', observaciones:rep.observaciones||'', pasos:rep.pasos||'',
+    checklist:checkSummary
+  }};
+  fetch(GS_URL, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+    headers: {'Content-Type': 'text/plain'}
+  }).then(function(r){ return r.json(); })
+  .then(function(d){
+    if (d.ok) { updateSyncStatus('ok'); cb(true); }
+    else { console.log('GS error:', d.error); updateSyncStatus('error'); cb(false); }
+  }).catch(function(e){ console.log('GS fetch error:', e); updateSyncStatus('error'); cb(false); });
 }
 
-// ── Load all reports from SharePoint ─────────────────────────────────────
+function deleteFromSheets(reportId, cb) {
+  fetch(GS_URL, {
+    method: 'POST',
+    body: JSON.stringify({action:'delete', id:String(reportId)}),
+    headers: {'Content-Type': 'text/plain'}
+  }).then(function(r){ return r.json(); })
+  .then(function(d){ if(cb) cb(d.ok); })
+  .catch(function(){ if(cb) cb(false); });
+}
+
 function loadFromSharePoint(cb) {
-  getSPToken(function(token) {
-    if (!token) { cb(null); return; }
-    updateSyncStatus('syncing');
-    var url = 'https://graph.microsoft.com/v1.0/sites/' +
-      encodeURIComponent('pkcgestiona.sharepoint.com') +
-      ':/sites/PKCCONSULTORIAYTELECONTROLSL:/lists/PKCinformes/items?expand=fields&$top=500';
-    fetch(url, { headers: { 'Authorization': 'Bearer ' + token } })
-    .then(function(r){ return r.json(); })
-    .then(function(data) {
-      if (!data.value) { updateSyncStatus('error'); cb(null); return; }
-      var spReports = data.value.map(function(item) {
-        var f = item.fields;
-        var cl = [];
-        try { cl = JSON.parse(f.ChecklistJSON||'[]'); } catch(e){}
-        return {
-          id: parseInt(f.ReportID)||item.id,
-          spItemId: item.id,
-          owner: f.Owner||'', nombre: f.Title||'', ciudad: f.CIUDAD||'',
-          fecha: f.Fecha||'', tecnico: f.Tecnico||'', empresa: f.Empresa||'',
-          contacto: f.Contacto||'', telefono: f.Telefono||'',
-          direccion: f.Direccion||'', plantas: f.Plantas||'', plazas: f.Plazas||'',
-          descripcion: f.Descripcion||'', valoracion: f.Valoracion||'',
-          observaciones: f.Observaciones||'', pasos: f.Pasos||'',
-          checklist: cl, fotosGenerales: []
-        };
-      });
-      updateSyncStatus('online');
-      cb(spReports);
-    }).catch(function(e){ console.log('SP load error:', e); updateSyncStatus('error'); cb(null); });
-  });
+  updateSyncStatus('syncing');
+  fetch(GS_URL + '?v=' + Date.now())
+  .then(function(r){ return r.json(); })
+  .then(function(d){
+    if (d.ok) { updateSyncStatus('online'); cb(d.reports||[]); }
+    else { console.log('GS load error:', d.error); updateSyncStatus('error'); cb(null); }
+  }).catch(function(e){ console.log('GS fetch error:', e); updateSyncStatus('error'); cb(null); });
 }
 
 // ── REPORT STORAGE (per user) ─────────────────────────────────────────────
@@ -791,31 +705,31 @@ function init() {
   document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
   document.getElementById('f-tecnico').value = currentUser.name || currentUser.username;
   if (currentUser.role === 'admin') renderAdminPanel();
-  // Check if returning from Microsoft login
-  if (checkTokenInHash()) { syncFromSP(); }
-  else if (getStoredToken()) { updateSyncStatus('online'); syncFromSP(); }
-  else { updateSyncStatus('offline'); }
+  // Auto-sync from Google Sheets on load
+  updateSyncStatus('syncing');
+  syncFromSP();
 }
 
 function syncFromSP() {
-  loadFromSharePoint(function(spReports) {
-    if (!spReports) return;
+  loadFromSharePoint(function(gsReports) {
+    if (!gsReports) { updateSyncStatus('error'); return; }
+    // Merge: GS is source of truth
     var localReports = lsGet(getReportsKey(currentUser.username)) || [];
-    var localIds = localReports.map(function(r){ return String(r.id); });
-    spReports.forEach(function(sr) {
-      if (localIds.indexOf(String(sr.id)) === -1) localReports.push(sr);
-    });
-    localReports.sort(function(a,b){ return b.id - a.id; });
-    lsSet(getReportsKey(currentUser.username), localReports);
-    reports = localReports;
+    var gsIds = gsReports.map(function(r){ return String(r.id); });
+    // Keep local-only reports not yet synced
+    var localOnly = localReports.filter(function(r){ return gsIds.indexOf(String(r.id)) === -1; });
+    var merged = gsReports.concat(localOnly);
+    merged.sort(function(a,b){ return b.id - a.id; });
+    lsSet(getReportsKey(currentUser.username), merged);
+    reports = merged;
     renderReports();
+    updateSyncStatus('online');
   });
 }
 
 function connectSharePoint() {
-  var stored = getStoredToken();
-  if (stored) { syncFromSP(); }
-  else { getSPToken(function(){}); }
+  updateSyncStatus('syncing');
+  syncFromSP();
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1071,12 +985,10 @@ function saveReport() {
   var banner = document.getElementById('edit-banner');
   if (banner) banner.style.display = 'none';
   renderReports(); showSec('reports'); clearForm();
-  // then sync to SharePoint
-  if (getStoredToken()) {
-    saveToSharePoint(rep, function(ok) {
-      if (!ok) console.log('SP sync failed, saved locally only.');
-    });
-  }
+  // sync to Google Sheets
+  saveToSharePoint(rep, function(ok) {
+    if (!ok) console.log('GS sync failed, saved locally only.');
+  });
 }
 
 function clearForm(){
@@ -1135,6 +1047,7 @@ function updateStats(){
 }
 function delReport(id){
   if(!confirm('¿Eliminar este informe?')) return;
+  deleteFromSheets(id, function(){});
   reports=reports.filter(function(r){return r.id!==id;});
   lsSet(getReportsKey(viewingUser), reports); renderReports();
 }
