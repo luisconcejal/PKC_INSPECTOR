@@ -716,7 +716,7 @@ function saveToSharePoint(rep, cb) {
         Pasos:         rep.pasos || '',
         Owner:         rep.owner || '',
         ReportID:      String(rep.id),
-        ChecklistJSON: JSON.stringify(checkSummary).substring(0, 4000)
+        ChecklistJSON: JSON.stringify(checkSummary).substring(0, 3000)
       }
     };
     var url = 'https://graph.microsoft.com/v1.0/sites/' +
@@ -750,7 +750,7 @@ function loadFromSharePoint(cb) {
         var cl = [];
         try { cl = JSON.parse(f.ChecklistJSON||'[]'); } catch(e){}
         return {
-          id: parseInt(f.ReportId)||item.id,
+          id: parseInt(f.ReportID)||item.id,
           spItemId: item.id,
           owner: f.Owner||'', nombre: f.Title||'', ciudad: f.CIUDAD||'',
           fecha: f.Fecha||'', tecnico: f.Tecnico||'', empresa: f.Empresa||'',
@@ -1423,7 +1423,7 @@ function createSPColumns() {
   if (!token) { setStatus('Pulsa ⟳ SP primero.', '#8B1A1A'); return; }
   var cols = ['Ciudad','Fecha','Tecnico','Empresa','Contacto','Telefono',
               'Direccion','Plantas','Plazas','Descripcion','Valoracion',
-              'Observaciones','Pasos','Owner','ReportId','ChecklistJSON'];
+              'Observaciones','Pasos','Owner','ReportID','ChecklistJSON'];
   // First get the site ID, then list ID, then create columns
   statusEl.textContent = 'Obteniendo ID del sitio...';
   fetch('https://graph.microsoft.com/v1.0/sites/pkcgestiona.sharepoint.com:/sites/PKCCONSULTORIAYTELECONTROLSL', {
