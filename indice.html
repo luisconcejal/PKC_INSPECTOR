@@ -637,7 +637,7 @@ function checkTokenInHash() {
   if (params.access_token) {
     spToken = params.access_token;
     // Store token and expiry
-    var exp = Date.now() + (parseInt(params.expires_in||3600)*1000);
+    var exp = Date.now() + Math.min(parseInt(params.expires_in||3600)*1000, 8*3600*1000);
     localStorage.setItem('pkc_sp_token', spToken);
     localStorage.setItem('pkc_sp_exp', String(exp));
     // Clean URL hash
@@ -651,7 +651,7 @@ function checkTokenInHash() {
 function getStoredToken() {
   var token = localStorage.getItem('pkc_sp_token');
   var exp = parseInt(localStorage.getItem('pkc_sp_exp')||'0');
-  if (token && Date.now() < exp - 60000) return token;
+  if (token && Date.now() < exp) return token; // use until actual expiry
   return null;
 }
 
@@ -698,23 +698,24 @@ function saveToSharePoint(rep, cb) {
       return {elemento:i.elemento, seccion:i.seccion, numero:i.numero,
               marca:i.marca, estado:i.estado, comentario:i.comentario};
     });
+    function spTrunc(s,n){return (s||'').toString().substring(0,n||255);}
     var body = {
       fields: {
-        Title:         rep.nombre,
-        CIUDAD:        rep.ciudad || '',
-        Fecha:         rep.fecha || '',
-        Tecnico:       rep.tecnico || '',
-        Empresa:       rep.empresa || '',
-        Contacto:      rep.contacto || '',
-        Telefono:      rep.telefono || '',
-        Direccion:     rep.direccion || '',
-        Plantas:       rep.plantas || '',
-        Plazas:        rep.plazas || '',
-        Descripcion:   rep.descripcion || '',
-        Valoracion:    rep.valoracion || '',
-        Observaciones: rep.observaciones || '',
-        Pasos:         rep.pasos || '',
-        Owner:         rep.owner || '',
+        Title:         spTrunc(rep.nombre),
+        CIUDAD:        spTrunc(rep.ciudad),
+        Fecha:         spTrunc(rep.fecha, 50),
+        Tecnico:       spTrunc(rep.tecnico),
+        Empresa:       spTrunc(rep.empresa),
+        Contacto:      spTrunc(rep.contacto),
+        Telefono:      spTrunc(rep.telefono, 100),
+        Direccion:     spTrunc(rep.direccion),
+        Plantas:       spTrunc(rep.plantas, 50),
+        Plazas:        spTrunc(rep.plazas, 50),
+        Descripcion:   spTrunc(rep.descripcion),
+        Valoracion:    spTrunc(rep.valoracion, 50),
+        Observaciones: spTrunc(rep.observaciones),
+        Pasos:         spTrunc(rep.pasos),
+        Owner:         spTrunc(rep.owner, 100),
         ReportID:      String(rep.id),
         ChecklistJSON: JSON.stringify(checkSummary).substring(0, 3000)
       }
