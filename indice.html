@@ -247,6 +247,7 @@ table.utbl tr:hover td{background:#faf8f5;}
 
     <!-- NUEVA VISITA -->
     <div id="sec-new" class="sec">
+      <div id="edit-banner" style="display:none;background:#fff3e0;border:1px solid #ffe0b2;border-radius:8px;padding:10px 14px;font-size:13px;color:#e65100;margin-bottom:1rem;"></div>
       <div class="card">
         <div class="ct">Datos del Activo</div>
         <div class="g2">
@@ -501,7 +502,7 @@ function startGrid() {
   // P letter positions scattered
   var items = [];
   var seed = 42;
-  function rand() { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; }
+  var rand = function() { seed = (seed * 1664525 + 1013904223) & 0xffffffff; return (seed >>> 0) / 0xffffffff; };
 
   // Cars scattered around (avoid center)
   var carPositions = [
@@ -615,6 +616,7 @@ var LABELS = {
 
 var reports = [];
 var genPhotos = [];
+var editingReportId = null;
 var itemPhotos = {};
 var curVal = '';
 var viewingUser = null; // for admin: whose reports are being viewed
@@ -689,6 +691,7 @@ function updateSyncStatus(status) {
 }
 
 // ── Save to SharePoint list ───────────────────────────────────────────────
+function spTrunc(s,n){return (s||'').toString().substring(0,n||255);}
 function saveToSharePoint(rep, cb) {
   getSPToken(function(token) {
     if (!token) { cb(false); return; }
@@ -698,7 +701,6 @@ function saveToSharePoint(rep, cb) {
       return {elemento:i.elemento, seccion:i.seccion, numero:i.numero,
               marca:i.marca, estado:i.estado, comentario:i.comentario};
     });
-    function spTrunc(s,n){return (s||'').toString().substring(0,n||255);}
     var body = {
       fields: {
         Title:         spTrunc(rep.nombre),
@@ -1038,7 +1040,10 @@ function saveReport() {
   var ciu=document.getElementById('f-ciudad').value.trim();
   var fec=document.getElementById('f-fecha').value;
   if(!nom||!ciu||!fec){alert('Completa: Nombre, Ciudad y Fecha.');return;}
-  var rep={id:Date.now(), owner:currentUser.username, nombre:nom, ciudad:ciu, fecha:fec,
+  var isEdit = editingReportId !== null;
+  var rep={
+    id: isEdit ? editingReportId : Date.now(),
+    owner:currentUser.username, nombre:nom, ciudad:ciu, fecha:fec,
     direccion:document.getElementById('f-dir').value,
     empresa:document.getElementById('f-empresa').value,
     contacto:document.getElementById('f-contacto').value,
@@ -1050,11 +1055,21 @@ function saveReport() {
     checklist:collectChecklist(), fotosGenerales:genPhotos.slice(),
     observaciones:document.getElementById('f-obs').value,
     valoracion:curVal, pasos:document.getElementById('f-pasos').value};
-  // save locally first
+  // save locally
   var ownerReports = lsGet(getReportsKey(currentUser.username))||[];
-  ownerReports.unshift(rep);
+  if (isEdit) {
+    // Replace existing report
+    for (var i=0; i<ownerReports.length; i++) {
+      if (ownerReports[i].id === editingReportId) { ownerReports[i] = rep; break; }
+    }
+  } else {
+    ownerReports.unshift(rep);
+  }
   lsSet(getReportsKey(currentUser.username), ownerReports);
   reports = ownerReports;
+  editingReportId = null;
+  var banner = document.getElementById('edit-banner');
+  if (banner) banner.style.display = 'none';
   renderReports(); showSec('reports'); clearForm();
   // then sync to SharePoint
   if (getStoredToken()) {
@@ -1068,7 +1083,10 @@ function clearForm(){
   ['f-nombre','f-ciudad','f-dir','f-empresa','f-contacto','f-tel','f-plantas','f-plazas','f-tecnico','f-desc','f-obs','f-pasos'].forEach(function(id){var e=document.getElementById(id);if(e)e.value='';});
   document.getElementById('f-fecha').value=new Date().toISOString().split('T')[0];
   document.getElementById('f-tecnico').value=currentUser.name||currentUser.username;
-  curVal=''; ['alta','media','baja'].forEach(function(x){document.getElementById('val-'+x).classList.remove('sel');});
+  editingReportId = null;
+  var banner = document.getElementById('edit-banner');
+  if (banner) banner.style.display = 'none';
+  curVal=''; ['alta','media','baja'].forEach(function(x){var el=document.getElementById('val-'+x);if(el)el.classList.remove('sel');});
   genPhotos=[]; itemPhotos={}; document.getElementById('gen-thumbs').innerHTML=''; buildChecklist();
 }
 
@@ -1099,6 +1117,7 @@ function renderReports() {
       '<div class="pb"><div class="pf" style="width:'+prog+'%"></div></div></div>' +
       '<div class="ra">' +
         '<button class="btn bo bsm" onclick="viewReport('+r.id+')">Ver</button>' +
+        '<button class="btn bo bsm" onclick="editReport('+r.id+')" title="Editar informe">&#9998; Editar</button>' +
         '<button class="btn bo bsm" onclick="printReport('+r.id+')" title="Imprimir informe">&#128438; Imprimir</button>' +
         '<button class="btn bp bsm" onclick="dlWord('+r.id+')">&#11015; Word</button>' +
         '<button class="btn bd bsm" onclick="delReport('+r.id+')">&#10005;</button>' +
@@ -1123,6 +1142,88 @@ function delReport(id){
 // ══════════════════════════════════════════════════════════════════════════════
 // VIEW REPORT MODAL
 // ══════════════════════════════════════════════════════════════════════════════
+function editReport(id) {
+  var r = null;
+  for (var i = 0; i < reports.length; i++) { if (reports[i].id === id) { r = reports[i]; break; } }
+  if (!r) return;
+  // Store editing ID
+  editingReportId = id;
+  // Fill form fields
+  document.getElementById('f-nombre').value = r.nombre || '';
+  document.getElementById('f-ciudad').value = r.ciudad || '';
+  document.getElementById('f-fecha').value = r.fecha || '';
+  document.getElementById('f-dir').value = r.direccion || '';
+  document.getElementById('f-empresa').value = r.empresa || '';
+  document.getElementById('f-contacto').value = r.contacto || '';
+  document.getElementById('f-tel').value = r.telefono || '';
+  document.getElementById('f-plantas').value = r.plantas || '';
+  document.getElementById('f-plazas').value = r.plazas || '';
+  document.getElementById('f-tecnico').value = r.tecnico || '';
+  document.getElementById('f-desc').value = r.descripcion || '';
+  document.getElementById('f-obs').value = r.observaciones || '';
+  document.getElementById('f-pasos').value = r.pasos || '';
+  // Valoracion
+  curVal = r.valoracion || '';
+  ['alta','media','baja'].forEach(function(x){ document.getElementById('val-'+x).classList.remove('sel'); });
+  if (curVal) { var el = document.getElementById('val-'+curVal); if(el) el.classList.add('sel'); }
+  // Rebuild checklist with saved data
+  buildChecklist();
+  if (r.checklist && r.checklist.length > 0) {
+    r.checklist.forEach(function(item) {
+      var id2 = item.elemento ? item.elemento.replace(/\W/g,'_') : '';
+      // Try standard id first, then custom
+      var ne = document.getElementById('num_'+id2);
+      if (!ne) {
+        // find by label text
+        var labels = document.querySelectorAll('.lbl-input');
+        for (var li = 0; li < labels.length; li++) {
+          if (labels[li].value === item.elemento) {
+            var rowId = labels[li].id.replace('lbl_','');
+            ne = document.getElementById('num_'+rowId);
+            id2 = rowId;
+            break;
+          }
+        }
+      }
+      if (ne) {
+        ne.value = item.numero || '';
+        var mrc = document.getElementById('mrc_'+id2);
+        if (mrc) mrc.value = item.marca || '';
+        var com = document.getElementById('com_'+id2);
+        if (com) com.value = item.comentario || '';
+        if (item.estado) {
+          var row = ne.closest('tr');
+          if (row) {
+            var pills = row.querySelectorAll('.pill');
+            pills.forEach(function(p){ p.classList.remove('on'); });
+            pills.forEach(function(p){ if(p.textContent===item.estado) p.classList.add('on'); });
+          }
+        }
+        // Restore photos
+        if (item.fotos && item.fotos.length > 0) {
+          itemPhotos[id2] = item.fotos.slice();
+          renderItemTh(id2);
+        }
+      }
+    });
+  }
+  // Restore general photos
+  genPhotos = (r.fotosGenerales || []).slice();
+  renderGenTh();
+  // Show edit banner
+  var banner = document.getElementById('edit-banner');
+  if (banner) { banner.style.display = 'block'; banner.innerHTML = '&#9998; Editando: <strong>'+r.nombre+'</strong> &nbsp;<button class="btn bo bsm" onclick="cancelEdit()">Cancelar</button>'; }
+  showSec('new');
+}
+
+function cancelEdit() {
+  editingReportId = null;
+  var banner = document.getElementById('edit-banner');
+  if (banner) banner.style.display = 'none';
+  clearForm();
+  showSec('reports');
+}
+
 function viewReport(id){
   var r=null; for(var i=0;i<reports.length;i++){if(reports[i].id===id){r=reports[i];break;}} if(!r) return;
   document.getElementById('modal-ttl').textContent=r.nombre;
@@ -1294,7 +1395,7 @@ function generateDocx(r){
   // Collect all images
   var imgList=[];
   var ridCtr=2;
-  function addImg(dataUrl){
+  var addImg = function(dataUrl){
     if(!dataUrl) return null;
     var ext=dataUrl.indexOf('image/png')>=0?'png':'jpeg';
     var rId='rId'+ridCtr++;
@@ -1415,7 +1516,7 @@ function generateDocx(r){
 function createSPColumns() {
   var statusEl = document.getElementById('sp-col-status') || document.getElementById('sp-col-status-top');
   var statusTop = document.getElementById('sp-col-status-top');
-  function setStatus(msg, color) {
+  var setStatus = function(msg, color) {
     if (statusEl) { statusEl.textContent = msg; statusEl.style.color = color||'#5a6a58'; }
     if (statusTop) { statusTop.textContent = msg; statusTop.style.color = color||'#5a6a58'; }
   }
