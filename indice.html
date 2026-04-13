@@ -700,23 +700,23 @@ function saveToSharePoint(rep, cb) {
     });
     var body = {
       fields: {
-        Title:        rep.nombre,
-        Ciudad:       rep.ciudad || '',
-        Fecha:        rep.fecha || '',
-        Tecnico:      rep.tecnico || '',
-        Empresa:      rep.empresa || '',
-        Contacto:     rep.contacto || '',
-        Telefono:     rep.telefono || '',
-        Direccion:    rep.direccion || '',
-        Plantas:      rep.plantas || '',
-        Plazas:       rep.plazas || '',
-        Descripcion:  rep.descripcion || '',
-        Valoracion:   rep.valoracion || '',
-        Observaciones:rep.observaciones || '',
-        Pasos:        rep.pasos || '',
-        Owner:        rep.owner || '',
-        ReportId:     String(rep.id),
-        ChecklistJSON:JSON.stringify(checkSummary).substring(0, 4000)
+        Title:         rep.nombre,
+        CIUDAD:        rep.ciudad || '',
+        Fecha:         rep.fecha || '',
+        Tecnico:       rep.tecnico || '',
+        Empresa:       rep.empresa || '',
+        Contacto:      rep.contacto || '',
+        Telefono:      rep.telefono || '',
+        Direccion:     rep.direccion || '',
+        Plantas:       rep.plantas || '',
+        Plazas:        rep.plazas || '',
+        Descripcion:   rep.descripcion || '',
+        Valoracion:    rep.valoracion || '',
+        Observaciones: rep.observaciones || '',
+        Pasos:         rep.pasos || '',
+        Owner:         rep.owner || '',
+        ReportID:      String(rep.id),
+        ChecklistJSON: JSON.stringify(checkSummary).substring(0, 4000)
       }
     };
     var url = 'https://graph.microsoft.com/v1.0/sites/' +
@@ -752,7 +752,7 @@ function loadFromSharePoint(cb) {
         return {
           id: parseInt(f.ReportId)||item.id,
           spItemId: item.id,
-          owner: f.Owner||'', nombre: f.Title||'', ciudad: f.Ciudad||'',
+          owner: f.Owner||'', nombre: f.Title||'', ciudad: f.CIUDAD||'',
           fecha: f.Fecha||'', tecnico: f.Tecnico||'', empresa: f.Empresa||'',
           contacto: f.Contacto||'', telefono: f.Telefono||'',
           direccion: f.Direccion||'', plantas: f.Plantas||'', plazas: f.Plazas||'',
