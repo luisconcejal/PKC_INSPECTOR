@@ -272,6 +272,9 @@ table.utbl tr:hover td{background:#faf8f5;}
         <div style="font-size:13px;">Pulsa &quot;+ Nueva Visita&quot; para comenzar</div>
       </div>
       <ul class="rl" id="reports-list"></ul>
+      <div style="margin-top:1rem;text-align:right;">
+        <label class="btn bo bsm" style="cursor:pointer;">&#11015; Importar informe<input type="file" accept=".json" onchange="importReport(this)" style="display:none;"></label>
+      </div>
     </div>
 
     <!-- NUEVA VISITA -->
@@ -1116,6 +1119,7 @@ function renderReports() {
       '<div class="ra">' +
         '<button class="btn bo bsm" onclick="viewReport('+r.id+')">Ver</button>' +
         '<button class="btn bo bsm" onclick="editReport('+r.id+')" title="Editar informe">&#9998; Editar</button>' +
+        '<button class="btn bo bsm" onclick="exportReport('+r.id+')" title="Exportar informe">&#11014; Export</button>' +
         '<button class="btn bo bsm" onclick="printReport('+r.id+')" title="Imprimir informe">&#128438; Imprimir</button>' +
         '<button class="btn bp bsm" onclick="dlWord('+r.id+')">&#11015; Word</button>' +
         '<button class="btn bd bsm" onclick="delReport('+r.id+')">&#10005;</button>' +
@@ -1361,6 +1365,49 @@ function printReport(id) {
 // WORD EXPORT
 // ══════════════════════════════════════════════════════════════════════════════
 function xe(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function exportReport(id) {
+  var r = null;
+  for (var i = 0; i < reports.length; i++) { if (reports[i].id === id) { r = reports[i]; break; } }
+  if (!r) return;
+  var json = JSON.stringify(r, null, 2);
+  var blob = new Blob([json], {type: 'application/json'});
+  var a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'PKC_' + (r.nombre||'informe').replace(/[^a-zA-Z0-9]/g,'_') + '_' + (r.fecha||'') + '.json';
+  a.click();
+}
+
+function importReport(inp) {
+  var file = inp.files[0];
+  if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    try {
+      var rep = JSON.parse(e.target.result);
+      if (!rep.id || !rep.nombre) { alert('Archivo no válido — falta id o nombre.'); return; }
+      // Check if already exists
+      var ownerReports = lsGet(getReportsKey(currentUser.username)) || [];
+      var exists = ownerReports.some(function(r){ return String(r.id) === String(rep.id); });
+      if (exists) {
+        if (!confirm('Ya existe un informe con ese ID ("'+rep.nombre+'"). ¿Sustituir?')) { inp.value=''; return; }
+        ownerReports = ownerReports.filter(function(r){ return String(r.id) !== String(rep.id); });
+      }
+      ownerReports.unshift(rep);
+      ownerReports.sort(function(a,b){ return b.id - a.id; });
+      lsSet(getReportsKey(currentUser.username), ownerReports);
+      reports = ownerReports;
+      renderReports();
+      // Sync to Sheets
+      saveToSharePoint(rep, function(){});
+      alert('Informe "'+rep.nombre+'" importado correctamente.');
+    } catch(err) {
+      alert('Error al leer el archivo: ' + err.message);
+    }
+    inp.value = '';
+  };
+  reader.readAsText(file);
+}
+
 function dlWord(id){var r=null;for(var i=0;i<reports.length;i++){if(reports[i].id===id){r=reports[i];break;}}if(!r)return;generateDocx(r);}
 
 function b64toUint8(b64){var bin=atob(b64);var arr=new Uint8Array(bin.length);for(var i=0;i<bin.length;i++)arr[i]=bin.charCodeAt(i);return arr;}
