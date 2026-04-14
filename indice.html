@@ -332,9 +332,6 @@ table.utbl tr:hover td{background:#faf8f5;}
 
     <!-- VALORACIÓN -->
     <div id="sec-val" class="sec">
-      <div style="background:#fff3e0;border:1px solid #ffe0b2;border-radius:8px;padding:10px 14px;font-size:13px;color:#e65100;margin-bottom:1rem;">
-        &#9888;&#65039; Completa primero el checklist en &quot;Nueva Visita&quot; antes de valorar. La valoraci&oacute;n se guardar&aacute; junto con el informe.
-      </div>
       <div class="card">
         <div class="ct">Valoraci&oacute;n Final</div>
         <div class="fg"><label>Observaciones y Conclusiones</label><textarea id="f-obs" placeholder="Resumen de hallazgos, oportunidades de mejora..."></textarea></div>
@@ -1119,7 +1116,8 @@ function renderReports() {
       '<div class="ra">' +
         '<button class="btn bo bsm" onclick="viewReport('+r.id+')">Ver</button>' +
         '<button class="btn bo bsm" onclick="editReport('+r.id+')" title="Editar informe">&#9998; Editar</button>' +
-        '<button class="btn bo bsm" onclick="exportReport('+r.id+')" title="Exportar informe">&#11014; Export</button>' +
+        '<button class="btn bo bsm" onclick="exportReport('+r.id+')" title="Exportar JSON">&#11014; Export</button>' +
+        '<button class="btn bo bsm" onclick="dlExcel('+r.id+')" title="Exportar Excel">&#128202; Excel</button>' +
         '<button class="btn bo bsm" onclick="printReport('+r.id+')" title="Imprimir informe">&#128438; Imprimir</button>' +
         '<button class="btn bp bsm" onclick="dlWord('+r.id+')">&#11015; Word</button>' +
         '<button class="btn bd bsm" onclick="delReport('+r.id+')">&#10005;</button>' +
@@ -1406,6 +1404,184 @@ function importReport(inp) {
     inp.value = '';
   };
   reader.readAsText(file);
+}
+
+function dlExcel(id) {
+  var r = null;
+  for (var i = 0; i < reports.length; i++) { if (reports[i].id === id) { r = reports[i]; break; } }
+  if (!r) return;
+  generateXlsx(r);
+}
+
+function generateXlsx(r) {
+  if (typeof JSZip === 'undefined') { alert('JSZip no disponible.'); return; }
+
+  // ── helpers ──────────────────────────────────────────────────────────────
+  function esc(s) { return (s||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+  function cell(v, t, bold, bg, wrap) {
+    var s = bold ? (bg ? 's="3"' : 's="1"') : (bg ? 's="2"' : (wrap ? 's="4"' : ''));
+    if (t === 'n') return '<c r="'+v[0]+'" '+s+'><v>'+v[1]+'</v></c>';
+    return '<c r="'+v[0]+'" t="inlineStr" '+s+'><is><t>'+esc(v[1])+'</t></is></c>';
+  }
+  function row(cells, ri) {
+    return '<row r="'+ri+'">'+cells+'</row>';
+  }
+  function colRef(c, r) {
+    var col = String.fromCharCode(65 + c);
+    return col + r;
+  }
+
+  // ── Hoja 1: Datos generales ───────────────────────────────────────────────
+  var rows1 = [];
+  var ri = 1;
+
+  // Título
+  rows1.push(row(cell([colRef(0,ri),'PKC CONSULTORÍA Y TELECONTROL — INFORME TÉCNICO'], 's', true, true), ri)); ri++;
+  rows1.push(row(cell([colRef(0,ri),'Evaluación y Diagnóstico para Telecontrol de Aparcamientos'], 's', false, true), ri)); ri++;
+  rows1.push(row('', ri)); ri++;
+
+  // Datos del informe
+  var campos = [
+    ['Nombre del aparcamiento', r.nombre],
+    ['Ciudad', r.ciudad],
+    ['Fecha de visita', r.fecha],
+    ['Técnico', r.tecnico],
+    ['Empresa', r.empresa],
+    ['Contacto', r.contacto],
+    ['Teléfono', r.telefono],
+    ['Dirección', r.direccion],
+    ['Nº Plantas', r.plantas],
+    ['Nº Plazas', r.plazas],
+    ['Descripción', r.descripcion],
+    ['Viabilidad', r.valoracion ? r.valoracion.toUpperCase() : ''],
+    ['Observaciones', r.observaciones],
+    ['Próximos pasos', r.pasos]
+  ];
+  campos.forEach(function(c) {
+    var cells = cell([colRef(0,ri), c[0]], 's', true, false) +
+                cell([colRef(1,ri), c[1]||''], 's', false, false);
+    rows1.push(row(cells, ri)); ri++;
+  });
+
+  var ws1 = '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetFormatPr defaultRowHeight="15"/>' +
+    '<cols>' +
+    '<col min="1" max="1" width="28" customWidth="1"/>' +
+    '<col min="2" max="2" width="45" customWidth="1"/>' +
+    '</cols>' +
+    '<sheetData>' + rows1.join('') + '</sheetData>' +
+    '</worksheet>';
+
+  // ── Hoja 2: Checklist ────────────────────────────────────────────────────
+  var rows2 = [];
+  var ri2 = 1;
+
+  // Cabecera
+  var hdr = ['Sección','Elemento','Uds.','Marca/Modelo','Estado','Comentario','Fotos'];
+  var hcells = hdr.map(function(h,ci){ return cell([colRef(ci,ri2),h],'s',true,true); }).join('');
+  rows2.push(row(hcells, ri2)); ri2++;
+
+  (r.checklist||[]).forEach(function(item) {
+    var nfotos = (item.fotos||[]).length;
+    var cells =
+      cell([colRef(0,ri2), item.seccion||''], 's') +
+      cell([colRef(1,ri2), item.elemento||''], 's') +
+      cell([colRef(2,ri2), item.numero||''], 's') +
+      cell([colRef(3,ri2), item.marca||''], 's') +
+      cell([colRef(4,ri2), item.estado||''], 's') +
+      cell([colRef(5,ri2), item.comentario||''], 's') +
+      cell([colRef(6,ri2), nfotos > 0 ? nfotos+' foto'+(nfotos>1?'s':'') : ''], 's');
+    rows2.push(row(cells, ri2)); ri2++;
+  });
+
+  var ws2 = '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<sheetFormatPr defaultRowHeight="15"/>' +
+    '<cols>' +
+    '<col min="1" max="1" width="22" customWidth="1"/>' +
+    '<col min="2" max="2" width="30" customWidth="1"/>' +
+    '<col min="3" max="3" width="8" customWidth="1"/>' +
+    '<col min="4" max="4" width="20" customWidth="1"/>' +
+    '<col min="5" max="5" width="12" customWidth="1"/>' +
+    '<col min="6" max="6" width="35" customWidth="1"/>' +
+    '<col min="7" max="7" width="12" customWidth="1"/>' +
+    '</cols>' +
+    '<sheetData>' + rows2.join('') + '</sheetData>' +
+    '<autoFilter ref="A1:G1"/>' +
+    '</worksheet>';
+
+  // ── Estilos ───────────────────────────────────────────────────────────────
+  var styles = '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts><font><sz val="11"/><name val="Arial"/></font>' +
+    '<font><sz val="11"/><name val="Arial"/><b/></font>' +
+    '<font><sz val="11"/><name val="Arial"/></font>' +
+    '<font><sz val="11"/><name val="Arial"/><b/></font></fonts>' +
+    '<fills><fill><patternFill patternType="none"/></fill>' +
+    '<fill><patternFill patternType="gray125"/></fill>' +
+    '<fill><patternFill patternType="solid"><fgColor rgb="FF8B1A1A"/></patternFill></fill>' +
+    '<fill><patternFill patternType="none"/></fill></fills>' +
+    '<borders><border/></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="3" fillId="2" borderId="0" xfId="0"><alignment wrapText="1"/></xf>' +
+    '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"><alignment wrapText="1"/></xf>' +
+    '</cellXfs>' +
+    '</styleSheet>';
+
+  // ── Ensamblado ZIP ────────────────────────────────────────────────────────
+  var wb = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+    '<sheets>' +
+    '<sheet name="Datos Generales" sheetId="1" r:id="rId1"/>' +
+    '<sheet name="Checklist" sheetId="2" r:id="rId2"/>' +
+    '</sheets></workbook>';
+
+  var wbRels = '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+    '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>' +
+    '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+    '</Relationships>';
+
+  var rels = '<?xml version="1.0" encoding="UTF-8"?>' +
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+    '</Relationships>';
+
+  var ct = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+    '<Default Extension="xml" ContentType="application/xml"/>' +
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+    '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+    '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' +
+    '</Types>';
+
+  var zip = new JSZip();
+  zip.file('[Content_Types].xml', ct);
+  zip.folder('_rels').file('.rels', rels);
+  var xl = zip.folder('xl');
+  xl.file('workbook.xml', wb);
+  xl.folder('_rels').file('workbook.xml.rels', wbRels);
+  xl.file('styles.xml', styles);
+  var sheets = xl.folder('worksheets');
+  sheets.file('sheet1.xml', ws1);
+  sheets.file('sheet2.xml', ws2);
+
+  zip.generateAsync({type:'blob', mimeType:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'})
+  .then(function(blob) {
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'PKC_' + (r.nombre||'informe').replace(/[^a-zA-Z0-9]/g,'_') + '_' + (r.fecha||'') + '.xlsx';
+    a.click();
+  });
 }
 
 function dlWord(id){var r=null;for(var i=0;i<reports.length;i++){if(reports[i].id===id){r=reports[i];break;}}if(!r)return;generateDocx(r);}
