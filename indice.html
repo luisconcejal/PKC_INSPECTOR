@@ -278,7 +278,10 @@ table.utbl tr:hover td{background:#faf8f5;}
       </div>
     </div>
 
-    <!-- NUEVA VISITA -->
+    <!-- OFFLINE BANNER -->
+    <div id="offline-banner" style="display:none;background:#fff3e0;border-bottom:2px solid #ffe0b2;padding:8px 1.2rem;font-size:12px;color:#e65100;text-align:center;">
+      &#128400; <strong>Modo offline</strong> — trabajando sin conexión. Los datos se guardan localmente y se sincronizarán automáticamente cuando recuperes internet.
+    </div>
     <div id="sec-new" class="sec">
       <div id="edit-banner" style="display:none;background:#fff3e0;border:1px solid #ffe0b2;border-radius:8px;padding:10px 14px;font-size:13px;color:#e65100;margin-bottom:1rem;"></div>
       <div class="card">
@@ -506,6 +509,13 @@ function doLogin() {
   var err = document.getElementById('login-err');
   var btn = document.getElementById('login-btn');
   if (!u || !p) { err.style.display = 'block'; return; }
+  // If offline, use cached credentials directly
+  if (!isOnline()) {
+    var found = findUser(u, p);
+    if (found) { loginSuccess(found); }
+    else { err.textContent = 'Sin conexión y credenciales no cacheadas.'; err.style.display = 'block'; }
+    return;
+  }
   // Try Sheets authentication first
   err.style.display = 'none';
   btn.textContent = '...';
@@ -720,15 +730,55 @@ function updateSyncStatus(status) {
   if (status === 'online')  { el.innerHTML = '&#9728;&#65039; Sheets conectado'; el.style.color = '#2a6a2a'; }
   if (status === 'syncing') { el.innerHTML = '&#8635; Sincronizando...';          el.style.color = '#8B6914'; }
   if (status === 'ok')      { el.innerHTML = '&#10003; Guardado en Sheets';       el.style.color = '#2a6a2a'; }
-  if (status === 'offline') { el.innerHTML = '&#9650; Solo local';                el.style.color = '#8B1A1A'; }
+  if (status === 'offline') { el.innerHTML = '&#128400; Modo offline';            el.style.color = '#8B6914'; }
   if (status === 'error')   { el.innerHTML = '&#10005; Error Sheets';             el.style.color = '#8B1A1A'; }
 }
 
-function checkTokenInHash() { return false; }
+// ── Offline detection ─────────────────────────────────────────────────────
+function isOnline() { return navigator.onLine; }
+
+window.addEventListener('online', function() {
+  updateSyncStatus('syncing');
+  showOfflineBanner(false);
+  if (currentUser) {
+    syncFromSP();
+    // Sync any pending local reports to Sheets
+    var pending = lsGet('pkc_pending_sync') || [];
+    if (pending.length > 0) {
+      pending.forEach(function(rep) {
+        saveToSharePoint(rep, function(){});
+      });
+      lsSet('pkc_pending_sync', []);
+    }
+  }
+});
+
+window.addEventListener('offline', function() {
+  updateSyncStatus('offline');
+  showOfflineBanner(true);
+});
+
+function showOfflineBanner(show) {
+  var b = document.getElementById('offline-banner');
+  if (!b) return;
+  b.style.display = show ? 'block' : 'none';
+}
+
+
 function getStoredToken() { return 'gs'; }
 function clearSPToken() {}
 
 function saveToSharePoint(rep, cb) {
+  if (!isOnline()) {
+    // Queue for later sync
+    var pending = lsGet('pkc_pending_sync') || [];
+    var exists = pending.some(function(r){ return String(r.id)===String(rep.id); });
+    if (!exists) pending.push(rep);
+    lsSet('pkc_pending_sync', pending);
+    updateSyncStatus('offline');
+    cb(false);
+    return;
+  }
   updateSyncStatus('syncing');
   var checkSummary = (rep.checklist||[]).map(function(i) {
     return {elemento:i.elemento, seccion:i.seccion, numero:i.numero,
@@ -806,9 +856,14 @@ function init() {
   document.getElementById('f-fecha').value = new Date().toISOString().split('T')[0];
   document.getElementById('f-tecnico').value = currentUser.name || currentUser.username;
   if (currentUser.role === 'admin') renderAdminPanel();
-  // Auto-sync from Google Sheets on load
-  updateSyncStatus('syncing');
-  syncFromSP();
+  if (!isOnline()) {
+    updateSyncStatus('offline');
+    showOfflineBanner(true);
+  } else {
+    showOfflineBanner(false);
+    updateSyncStatus('syncing');
+    syncFromSP();
+  }
 }
 
 function syncFromSP() {
