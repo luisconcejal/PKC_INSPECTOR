@@ -301,6 +301,18 @@ table.utbl tr:hover td{background:#faf8f5;}
           <div class="fg"><label>N&ordm; Plazas</label><input type="text" id="f-plazas" placeholder="Ej: 250"></div>
           <div class="fg"><label>T&eacute;cnico PKC</label><input type="text" id="f-tecnico" placeholder="Se rellena autom&aacute;ticamente"></div>
         </div>
+        <div class="fg">
+          <label>Foto de Portada</label>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <label class="btn bo bsm" style="cursor:pointer;">&#128247; C&aacute;mara<input type="file" accept="image/*" capture="environment" onchange="setCoverPhoto(this)" style="display:none;"></label>
+            <label class="btn bo bsm" style="cursor:pointer;">&#128443; Galeria<input type="file" accept="image/*" onchange="setCoverPhoto(this)" style="display:none;"></label>
+            <div id="cover-preview" style="display:none;position:relative;width:80px;height:80px;">
+              <img id="cover-img" style="width:80px;height:80px;object-fit:cover;border-radius:8px;border:2px solid var(--border);">
+              <button class="td" onclick="clearCoverPhoto()" style="top:-4px;right:-4px;">✕</button>
+            </div>
+            <span id="cover-hint" style="font-size:11px;color:#8a7a6a;">Foto que aparece en la lista de informes</span>
+          </div>
+        </div>
         <div class="fg"><label>Descripci&oacute;n General</label><textarea id="f-desc" placeholder="Breve descripci&oacute;n del activo..."></textarea></div>
       </div>
       <div class="card">
@@ -690,6 +702,7 @@ var LABELS = {
 
 var reports = [];
 var genPhotos = [];
+var coverPhoto = '';
 var editingReportId = null;
 var itemPhotos = {};
 var curVal = '';
@@ -738,6 +751,7 @@ function saveToSharePoint(rep, cb) {
     plantas:rep.plantas||'', plazas:rep.plazas||'', descripcion:rep.descripcion||'',
     valoracion:rep.valoracion||'', observaciones:rep.observaciones||'', pasos:rep.pasos||'',
     checklist:checkSummary,
+    coverPhoto: rep.coverPhoto||'',
     fotos: allFotos
   }};
   fetch(GS_URL, {
@@ -952,6 +966,27 @@ function compressImage(dataUrl, maxW, quality, cb) {
   img.src = dataUrl;
 }
 
+function setCoverPhoto(inp) {
+  var file = inp.files[0]; if (!file) return;
+  var reader = new FileReader();
+  reader.onload = function(e) {
+    compressImage(e.target.result, 300, 0.6, function(compressed) {
+      coverPhoto = compressed;
+      document.getElementById('cover-img').src = compressed;
+      document.getElementById('cover-preview').style.display = 'block';
+      document.getElementById('cover-hint').style.display = 'none';
+    });
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearCoverPhoto() {
+  coverPhoto = '';
+  document.getElementById('cover-preview').style.display = 'none';
+  document.getElementById('cover-hint').style.display = 'inline';
+}
+
+
 function addItemPhoto(id, inp) {
   if (!itemPhotos[id]) itemPhotos[id] = [];
   Array.from(inp.files).forEach(function(f) {
@@ -1054,6 +1089,7 @@ function saveReport() {
     tecnico:document.getElementById('f-tecnico').value||currentUser.name,
     descripcion:document.getElementById('f-desc').value,
     checklist:collectChecklist(), fotosGenerales:genPhotos.slice(),
+    coverPhoto: coverPhoto,
     observaciones:document.getElementById('f-obs').value,
     valoracion:curVal, pasos:document.getElementById('f-pasos').value};
   // save locally
@@ -1085,6 +1121,9 @@ function clearForm(){
   editingReportId = null;
   var banner = document.getElementById('edit-banner');
   if (banner) banner.style.display = 'none';
+  coverPhoto = '';
+  var cp = document.getElementById('cover-preview'); if(cp) cp.style.display='none';
+  var ch = document.getElementById('cover-hint'); if(ch) ch.style.display='inline';
   curVal=''; ['alta','media','baja'].forEach(function(x){var el=document.getElementById('val-'+x);if(el)el.classList.remove('sel');});
   genPhotos=[]; itemPhotos={}; document.getElementById('gen-thumbs').innerHTML=''; buildChecklist();
 }
@@ -1110,7 +1149,10 @@ function renderReports() {
     var bt=r.valoracion==='alta'?'Alta Viabilidad':r.valoracion==='media'?'Viabilidad Media':r.valoracion==='baja'?'Baja Viabilidad':'Sin valorar';
     var prog=getProgress(r);
     var li=document.createElement('li'); li.className='ri';
-    li.innerHTML='<div class="ric">🅿️</div>' +
+    var iconHtml = r.coverPhoto
+      ? '<div class="ric" style="overflow:hidden;padding:0;"><img src="'+r.coverPhoto+'" style="width:36px;height:36px;object-fit:cover;border-radius:7px;"></div>'
+      : '<div class="ric">🅿️</div>';
+    li.innerHTML= iconHtml +
       '<div class="rif"><div class="rn">'+r.nombre+'<span class="badge '+bc+'">'+bt+'</span></div>' +
       '<div class="rm">'+r.ciudad+' · '+r.fecha+(r.tecnico?' · '+r.tecnico:'')+'</div>' +
       '<div class="pb"><div class="pf" style="width:'+prog+'%"></div></div></div>' +
@@ -1208,6 +1250,13 @@ function editReport(id) {
         }
       }
     });
+  }
+  // Restore cover photo
+  coverPhoto = r.coverPhoto || '';
+  if (coverPhoto) {
+    document.getElementById('cover-img').src = coverPhoto;
+    document.getElementById('cover-preview').style.display = 'block';
+    document.getElementById('cover-hint').style.display = 'none';
   }
   // Restore general photos
   genPhotos = (r.fotosGenerales || []).slice();
