@@ -1005,7 +1005,12 @@ function renderItemTh(id) {
   var c = document.getElementById('th_'+id); if (!c) return; c.innerHTML = '';
   (itemPhotos[id]||[]).forEach(function(s,i) {
     var w = document.createElement('div'); w.className = 'tw';
-    w.innerHTML = '<img class="ti" src="'+s+'"><button class="td" onclick="delItemPh(\\\''+id+'\\\',' +i+')">✕</button><a class="td-save" href="'+s+'" download="foto_'+i+'.jpg" title="Guardar">&#128190;</a>';
+    var img = document.createElement('img'); img.className = 'ti'; img.src = s;
+    var btn = document.createElement('button'); btn.className = 'td'; btn.textContent = '\u2715';
+    btn.addEventListener('click', (function(eid,ei){ return function(){ delItemPh(eid,ei); }; })(id,i));
+    var a = document.createElement('a'); a.className = 'td-save'; a.href = s;
+    a.download = 'foto_'+i+'.jpg'; a.title = 'Guardar'; a.innerHTML = '&#128190;';
+    w.appendChild(img); w.appendChild(btn); w.appendChild(a);
     c.appendChild(w);
   });
 }
